@@ -29,7 +29,12 @@ interface Restaurant {
   primary_color: string
   slug: string
   image_url: string | null
-  phone: string | null
+  // AQUI: Troque "phone" por:
+  whatsapp_number: string | null 
+  latitude: number
+  longitude: number
+  price_per_km: number
+  min_delivery_time: number
 }
 
 interface CartItem {
@@ -260,8 +265,13 @@ export default function RestaurantPage({ params }: { params: { slug: string } })
         onClose={() => setIsCartOpen(false)}
         cart={cart}
         onRemoveItem={handleRemoveFromCart}
-        restaurantPhone={restaurant?.phone}
-        restaurantId={restaurant?.id} // Passa o telefone do dono
+        // AQUI: Mude de restaurant?.phone para:
+        restaurantPhone={restaurant?.whatsapp_number} 
+        restaurantId={restaurant?.id}
+        restaurantLat={restaurant?.latitude}
+        restaurantLng={restaurant?.longitude}
+        pricePerKm={restaurant?.price_per_km}
+        baseTime={restaurant?.min_delivery_time}
       />
 
     </div>
