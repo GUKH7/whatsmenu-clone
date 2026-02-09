@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
-import { Star, Clock, Search, ShoppingBag } from 'lucide-react'
+import { Star, Clock, Search, MapPin } from 'lucide-react'
 import ProductDetailsModal from '@/components/product-details-modal'
-import CartSummary from '@/components/cart-summary' // <--- IMPORTADO
+import CartSummary from '@/components/cart-summary'
+import CategoryMenu from '@/components/category-menu' // <--- Importamos aqui
+import { useCart } from '@/contexts/cart-context'
 
-// --- Tipos ---
 interface Product {
   id: string
   name: string
@@ -14,6 +15,7 @@ interface Product {
   price: number
   image_url: string | null
   category_id: string
+  addons?: { name: string; price: number }[] 
 }
 
 interface Category {
@@ -29,18 +31,9 @@ interface Restaurant {
   primary_color: string
   slug: string
   image_url: string | null
-  // AQUI: Troque "phone" por:
-  whatsapp_number: string | null 
-  latitude: number
-  longitude: number
-  price_per_km: number
   min_delivery_time: number
-}
-
-interface CartItem {
-  product: Product
-  quantity: number
-  observation: string
+  opening_time: string 
+  closing_time: string 
 }
 
 export default function RestaurantPage({ params }: { params: { slug: string } }) {
@@ -49,19 +42,20 @@ export default function RestaurantPage({ params }: { params: { slug: string } })
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   )
 
+  const { addToCart } = useCart()
+
   const [restaurant, setRestaurant] = useState<Restaurant | null>(null)
   const [categories, setCategories] = useState<Category[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
-
-  // Estado do Carrinho
-  const [cart, setCart] = useState<CartItem[]>([])
+  const [isOpen, setIsOpen] = useState(true)
   
-  // Controle dos Modais
+  // Controle da Categoria Ativa
+  const [activeCategory, setActiveCategory] = useState<string>("")
+
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
-  const [isCartOpen, setIsCartOpen] = useState(false) // Controle da Sacola
 
   useEffect(() => {
     fetchRestaurantData()
@@ -79,6 +73,7 @@ export default function RestaurantPage({ params }: { params: { slug: string } })
       if (error || !restaurantData) return
 
       setRestaurant(restaurantData)
+      checkIfOpen(restaurantData.opening_time, restaurantData.closing_time)
 
       const { data: catData } = await supabase
         .from('categories')
@@ -86,7 +81,10 @@ export default function RestaurantPage({ params }: { params: { slug: string } })
         .eq('restaurant_id', restaurantData.id)
         .order('order', { ascending: true })
 
-      if (catData) setCategories(catData)
+      if (catData) {
+          setCategories(catData)
+          if(catData.length > 0) setActiveCategory(catData[0].id)
+      }
 
       const { data: prodData } = await supabase
         .from('products')
@@ -102,123 +100,158 @@ export default function RestaurantPage({ params }: { params: { slug: string } })
     }
   }
 
+  function checkIfOpen(openTime: string, closeTime: string) {
+    if (!openTime || !closeTime) return setIsOpen(true);
+    const now = new Date();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    const [openH, openM] = openTime.split(':').map(Number);
+    const [closeH, closeM] = closeTime.split(':').map(Number);
+    const startMinutes = openH * 60 + openM;
+    const endMinutes = closeH * 60 + closeM;
+
+    if (endMinutes < startMinutes) {
+        if (currentMinutes >= startMinutes || currentMinutes < endMinutes) setIsOpen(true);
+        else setIsOpen(false);
+    } else {
+        if (currentMinutes >= startMinutes && currentMinutes < endMinutes) setIsOpen(true);
+        else setIsOpen(false);
+    }
+  }
+
   const formatPrice = (value: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
   }
 
-  // Abre modal do produto
   const handleProductClick = (product: Product) => {
     setSelectedProduct(product)
     setIsModalOpen(true)
   }
 
-  // Adiciona ao Carrinho
   const handleAddToCart = (product: Product, quantity: number, observation: string) => {
-    const newItem: CartItem = { product, quantity, observation }
-    setCart([...cart, newItem])
+    if (!isOpen) {
+        alert("A loja está fechada! Não é possível adicionar itens.");
+        return;
+    }
+    addToCart(product, quantity, observation)
     setIsModalOpen(false)
   }
 
-  // Remove do Carrinho (Nova função!)
-  const handleRemoveFromCart = (indexToRemove: number) => {
-    setCart(cart.filter((_, index) => index !== indexToRemove))
-  }
-
-  const cartTotal = cart.reduce((acc, item) => acc + (item.product.price * item.quantity), 0)
-  const cartCount = cart.reduce((acc, item) => acc + item.quantity, 0)
-
-  if (loading) return <div className="min-h-screen flex items-center justify-center bg-gray-50">Carregando...</div>
+  if (loading) return <div className="min-h-screen flex items-center justify-center bg-gray-50 text-red-600 font-bold animate-pulse">Carregando cardápio...</div>
   if (!restaurant) return <div className="min-h-screen flex items-center justify-center">Loja não encontrada</div>
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-24 font-sans">
+    <div className="min-h-screen bg-gray-50 pb-32 font-sans selection:bg-red-100">
       
       {/* Banner */}
-      <div className="relative w-full h-40 md:h-52 bg-gray-200">
+      <div className="relative w-full h-40 md:h-52 bg-gray-900">
         <img 
           src="https://images.unsplash.com/photo-1504674900247-0877df9cc836?q=80&w=1000&auto=format&fit=crop" 
           alt="Capa"
-          className="w-full h-full object-cover"
+          className="w-full h-full object-cover opacity-60"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent"></div>
+        <div className="absolute inset-0 bg-gradient-to-t from-gray-900 via-transparent to-transparent"></div>
       </div>
 
       {/* Cabeçalho */}
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 relative mb-8">
-        <div className="flex flex-col md:flex-row items-center md:items-start -mt-12 gap-4 md:gap-6 text-center md:text-left">
-            <div className="w-24 h-24 md:w-32 md:h-32 rounded-full border-4 border-white bg-white shadow-md overflow-hidden flex-shrink-0 z-10 relative">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 relative mb-6">
+        <div className="flex flex-col md:flex-row items-center md:items-start gap-6 text-center md:text-left">
+            
+            <div className="-mt-16 w-28 h-28 md:w-36 md:h-36 rounded-2xl border-4 border-white bg-white shadow-xl overflow-hidden flex-shrink-0 z-10 relative">
                 {restaurant.image_url ? (
                    <img src={restaurant.image_url} alt={restaurant.name} className="w-full h-full object-cover" />
                 ) : (
-                   <div className="w-full h-full flex items-center justify-center bg-gray-50 text-2xl font-bold text-gray-400">
+                   <div className="w-full h-full flex items-center justify-center bg-gray-50 text-3xl font-bold text-gray-300">
                      {restaurant.name.substring(0,2).toUpperCase()}
                    </div>
                 )}
             </div>
-            <div className="flex-1 pt-2 md:pt-14"> 
-                <div className="flex flex-col md:flex-row justify-between items-center md:items-start">
-                    <div>
-                        <h1 className="text-3xl font-bold text-gray-900 leading-tight">{restaurant.name}</h1>
-                        <div className="flex flex-wrap justify-center md:justify-start items-center gap-4 mt-2 text-sm text-gray-600">
-                            <span className="flex items-center gap-1 text-yellow-500 font-bold"><Star size={16} fill="currentColor" /> 4.8</span>
-                            <span className="flex items-center gap-1"><Clock size={16} /> 30-45 min</span>
-                            <span className="text-green-600 font-medium bg-green-50 px-2 py-0.5 rounded">Entrega Grátis</span>
-                        </div>
-                    </div>
+            
+            <div className="flex-1 pt-2 md:pt-4"> 
+                <h1 className="text-3xl font-extrabold text-gray-900 leading-tight mb-2">{restaurant.name}</h1>
+                
+                <div className="flex flex-wrap justify-center md:justify-start items-center gap-3 text-sm font-medium text-gray-600">
+                    <span className="flex items-center gap-1 bg-white px-2 py-1 rounded-md border border-gray-200 shadow-sm">
+                        <Star size={14} className="text-yellow-500 fill-yellow-500" /> 4.8
+                    </span>
+                    <span className="flex items-center gap-1 bg-white px-2 py-1 rounded-md border border-gray-200 shadow-sm">
+                        <Clock size={14} className="text-gray-400" /> {restaurant.min_delivery_time || '30-40'} min
+                    </span>
+                    {isOpen ? (
+                        <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-green-100 text-green-700 border border-green-200 font-bold text-xs">
+                            <span className="w-2 h-2 rounded-full bg-green-600 animate-pulse"></span> Aberto
+                        </span>
+                    ) : (
+                        <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-red-100 text-red-700 border border-red-200 font-bold text-xs">
+                            <span className="w-2 h-2 rounded-full bg-red-600"></span> Fechado
+                        </span>
+                    )}
+                </div>
+                <div className="mt-2 text-xs text-gray-500 flex items-center justify-center md:justify-start gap-1">
+                     <MapPin size={12}/> Horário: {restaurant.opening_time} às {restaurant.closing_time}
                 </div>
             </div>
         </div>
       </div>
 
-      {/* Busca */}
-      <div className="sticky top-0 z-20 bg-white shadow-sm py-4 px-4 mb-6 border-b border-gray-100">
-          <div className="max-w-5xl mx-auto relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-red-500" size={20} />
+      {/* Busca (Agora não é mais Sticky) */}
+      <div className="px-4 mb-4">
+          <div className="max-w-3xl mx-auto relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
             <input 
                 type="text"
-                placeholder="Buscar no cardápio..."
+                placeholder="Buscar produtos..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 bg-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:bg-white transition-all text-gray-700 placeholder-gray-400"
+                className="w-full pl-10 pr-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500/50 outline-none transition-all text-gray-800 placeholder-gray-400 shadow-sm"
             />
           </div>
       </div>
 
+      {/* MENU GRUDADO (NOVO) */}
+      <CategoryMenu 
+        categories={categories} 
+        selectedCategory={activeCategory} 
+        onSelectCategory={setActiveCategory} 
+      />
+
       {/* Listagem */}
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 space-y-12">
+      <main className="max-w-5xl mx-auto px-4 sm:px-6 space-y-10 mt-8">
         {categories.map((category) => {
             const categoryProducts = products.filter(p => 
                 p.category_id === category.id &&
                 p.name.toLowerCase().includes(searchTerm.toLowerCase())
             )
-
             if (categoryProducts.length === 0) return null
-
             return (
-                <section key={category.id}>
-                    <h2 className="text-xl font-bold text-gray-900 mb-6">{category.name}</h2>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-8">
+                <section key={category.id} id={category.id} className="scroll-mt-32">
+                    <h2 className="text-xl font-bold text-gray-800 mb-4 border-l-4 border-red-500 pl-3">{category.name}</h2>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         {categoryProducts.map((product) => (
                             <div 
                                 key={product.id} 
                                 onClick={() => handleProductClick(product)}
-                                className="group bg-white rounded-lg border border-gray-100 p-4 hover:border-gray-200 hover:shadow-md transition-all cursor-pointer flex justify-between gap-4 h-full"
+                                className={`group bg-white rounded-xl p-3 shadow-sm border border-gray-100 hover:shadow-md hover:border-red-200 transition-all cursor-pointer flex gap-4 ${!isOpen && 'opacity-60 grayscale'}`}
                             >
-                                <div className="flex flex-col justify-between flex-1">
-                                    <div>
-                                        <h3 className="font-semibold text-gray-800 text-lg leading-tight mb-2">{product.name}</h3>
-                                        <p className="text-gray-500 text-xs sm:text-sm line-clamp-3 leading-relaxed">{product.description}</p>
-                                    </div>
-                                    <div className="mt-3 font-medium text-gray-900">
-                                        <span className="text-green-700">{formatPrice(product.price)}</span>
-                                    </div>
-                                </div>
-                                <div className="w-28 h-28 sm:w-32 sm:h-32 flex-shrink-0 bg-gray-100 rounded-lg overflow-hidden relative">
+                                <div className="w-28 h-28 flex-shrink-0 bg-gray-50 rounded-lg overflow-hidden">
                                     {product.image_url ? (
-                                        <img src={product.image_url} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                                        <img src={product.image_url} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
                                     ) : (
-                                        <div className="w-full h-full flex flex-col items-center justify-center text-gray-300"><div className="text-xs text-center p-2">Sem foto</div></div>
+                                        <div className="w-full h-full flex items-center justify-center text-gray-300 text-xs">Sem foto</div>
                                     )}
+                                </div>
+
+                                <div className="flex flex-col justify-between flex-1 py-1">
+                                    <div>
+                                        <h3 className="font-bold text-gray-800 leading-tight mb-1">{product.name}</h3>
+                                        <p className="text-gray-500 text-xs line-clamp-2">{product.description}</p>
+                                    </div>
+                                    <div className="flex items-center justify-between mt-2">
+                                        <span className="text-green-700 font-bold">{formatPrice(product.price)}</span>
+                                        <button className="text-xs bg-red-50 text-red-600 px-3 py-1.5 rounded-full font-bold hover:bg-red-100 transition-colors">
+                                            Adicionar
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         ))}
@@ -228,30 +261,6 @@ export default function RestaurantPage({ params }: { params: { slug: string } })
         })}
       </main>
 
-      {/* BARRA DA SACOLA */}
-      {cart.length > 0 && (
-        <div className="fixed bottom-0 left-0 w-full bg-white border-t border-gray-200 p-4 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-40 animate-slide-up">
-            <div className="max-w-5xl mx-auto flex justify-between items-center">
-                <div className="flex flex-col">
-                    <span className="text-gray-500 text-xs font-medium">Total sem entrega</span>
-                    <div className="flex items-center gap-2">
-                        <span className="font-bold text-lg text-gray-900">{formatPrice(cartTotal)}</span>
-                        <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-bold">
-                           {cartCount} item{cartCount > 1 ? 's' : ''}
-                        </span>
-                    </div>
-                </div>
-                <button 
-                    onClick={() => setIsCartOpen(true)} // <--- AGORA ABRE A SACOLA!
-                    className="bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 transition-colors shadow-lg shadow-red-200"
-                >
-                    Ver Sacola <ShoppingBag size={18} />
-                </button>
-            </div>
-        </div>
-      )}
-
-      {/* MODAL DO PRODUTO */}
       <ProductDetailsModal 
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
@@ -259,20 +268,7 @@ export default function RestaurantPage({ params }: { params: { slug: string } })
         onAddToCart={handleAddToCart}
       />
 
-      {/* MODAL DA SACOLA (NOVO!) */}
-      <CartSummary
-        isOpen={isCartOpen}
-        onClose={() => setIsCartOpen(false)}
-        cart={cart}
-        onRemoveItem={handleRemoveFromCart}
-        // AQUI: Mude de restaurant?.phone para:
-        restaurantPhone={restaurant?.whatsapp_number} 
-        restaurantId={restaurant?.id}
-        restaurantLat={restaurant?.latitude}
-        restaurantLng={restaurant?.longitude}
-        pricePerKm={restaurant?.price_per_km}
-        baseTime={restaurant?.min_delivery_time}
-      />
+      <CartSummary isOpen={isOpen} />
 
     </div>
   )

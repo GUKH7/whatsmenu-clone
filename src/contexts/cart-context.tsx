@@ -1,154 +1,120 @@
-"use client";
+"use client"
 
-import React, {
-  createContext,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import { createContext, useContext, useState, useEffect } from "react"
+import { createBrowserClient } from "@supabase/ssr"
+import { calculateDistance, calculateDeliveryFee } from "@/lib/distance"
 
-const STORAGE_KEY = "whatsmenu_cart";
-
-export interface CartItem {
-  id: string;
-  name: string;
-  price: number;
-  image_url?: string | null;
-  quantity: number;
+// --- CORREÇÃO: Adicionamos 'observation' aqui ---
+interface CartItem {
+  id: string
+  product_id: string
+  name: string
+  price: number
+  quantity: number
+  image_url?: string
+  observation?: string 
 }
 
-type ProductInput = {
-  id: string;
-  name: string;
-  price: number;
-  image_url?: string | null;
-};
-
-interface CartContextValue {
-  items: CartItem[];
-  totalQuantity: number;
-  totalPrice: number;
-  addToCart: (product: ProductInput, quantity?: number) => void;
-  removeFromCart: (productId: string) => void;
-  clearCart: () => void;
+interface RestaurantData {
+  id: string
+  name: string
+  address_lat: number
+  address_lng: number
+  delivery_tiers: any[]
 }
 
-export const CartContext = createContext<CartContextValue | null>(null);
+interface CartContextType {
+  items: CartItem[]
+  addToCart: (product: any, quantity: number, observation?: string) => void
+  removeFromCart: (productId: string) => void
+  clearCart: () => void
+  total: number
+  deliveryFee: number
+  deliveryTime: number
+  distance: number
+  userLocation: { lat: number; lng: number } | null
+  setUserLocation: (loc: { lat: number; lng: number } | null) => void
+  restaurant: RestaurantData | null
+}
+
+const CartContext = createContext<CartContextType>({} as CartContextType)
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
-  const [items, setItems] = useState<CartItem[]>([]);
+  const [items, setItems] = useState<CartItem[]>([])
+  const [restaurant, setRestaurant] = useState<RestaurantData | null>(null)
+  
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null)
+  const [distance, setDistance] = useState(0)
+  const [deliveryFee, setDeliveryFee] = useState(0)
+  const [deliveryTime, setDeliveryTime] = useState(0)
 
-  // Carregar do localStorage ao montar
+  const supabase = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  )
+
   useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    try {
-      const stored = window.localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored) as CartItem[];
-        if (Array.isArray(parsed)) {
-          setItems(parsed);
-        }
-      }
-    } catch (error) {
-      console.error("Erro ao carregar carrinho do localStorage", error);
+    async function loadRestaurant() {
+      const { data } = await supabase.from('restaurants').select('*').single()
+      if (data) setRestaurant(data)
     }
-  }, []);
+    loadRestaurant()
+  }, [])
 
-  // Salvar no localStorage sempre que o carrinho mudar
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (userLocation && restaurant) {
+        const lat1 = Number(userLocation.lat)
+        const lng1 = Number(userLocation.lng)
+        const lat2 = Number(restaurant.address_lat)
+        const lng2 = Number(restaurant.address_lng)
 
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
-    } catch (error) {
-      console.error("Erro ao salvar carrinho no localStorage", error);
+        const dist = calculateDistance(lat1, lng1, lat2, lng2)
+        setDistance(dist)
+        
+        const { price, time } = calculateDeliveryFee(dist, restaurant.delivery_tiers)
+        setDeliveryFee(price)
+        setDeliveryTime(time)
     }
-  }, [items]);
+  }, [userLocation, restaurant])
 
-  const addToCart = (product: ProductInput, quantity: number = 1) => {
-    if (quantity <= 0) return;
-
-    setItems((prev) => {
-      const existing = prev.find((item) => item.id === product.id);
-
-      if (existing) {
-        // Agrupar itens iguais: apenas aumenta a quantidade
-        return prev.map((item) =>
-          item.id === product.id
-            ? { ...item, quantity: item.quantity + quantity }
-            : item,
-        );
+  const addToCart = (product: any, quantity: number, observation?: string) => {
+    setItems(prev => {
+      const existingIndex = prev.findIndex(i => i.product_id === product.id && i.observation === observation)
+      
+      if (existingIndex > -1) {
+        const newItems = [...prev]
+        newItems[existingIndex].quantity += quantity
+        return newItems
       }
-
-      return [
-        ...prev,
-        {
-          id: product.id,
-          name: product.name,
-          price: product.price,
-          image_url: product.image_url,
-          quantity,
-        },
-      ];
-    });
-  };
-
-  // removeFromCart aqui significa "remover 1 unidade" (usado no botão -)
-  const removeFromCart = (productId: string) => {
-    setItems((prev) => {
-      const existing = prev.find((item) => item.id === productId);
-      if (!existing) return prev;
-
-      if (existing.quantity <= 1) {
-        return prev.filter((item) => item.id !== productId);
-      }
-
-      return prev.map((item) =>
-        item.id === productId
-          ? { ...item, quantity: item.quantity - 1 }
-          : item,
-      );
-    });
-  };
-
-  const clearCart = () => {
-    setItems([]);
-  };
-
-  const { totalQuantity, totalPrice } = useMemo(() => {
-    const quantity = items.reduce((sum, item) => sum + item.quantity, 0);
-    const total = items.reduce(
-      (sum, item) => sum + item.quantity * item.price,
-      0,
-    );
-
-    return { totalQuantity: quantity, totalPrice: total };
-  }, [items]);
-
-  const value = useMemo<CartContextValue>(
-    () => ({
-      items,
-      totalQuantity,
-      totalPrice,
-      addToCart,
-      removeFromCart,
-      clearCart,
-    }),
-    [items, totalQuantity, totalPrice],
-  );
-
-  return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
-}
-
-export function useCart() {
-  const context = useContext(CartContext);
-
-  if (!context) {
-    throw new Error("useCart deve ser usado dentro de um CartProvider");
+      
+      return [...prev, { 
+        id: crypto.randomUUID(), 
+        product_id: product.id, 
+        name: product.name, 
+        price: product.price, 
+        quantity: quantity, 
+        image_url: product.image_url,
+        observation: observation 
+      }]
+    })
   }
 
-  return context;
+  const removeFromCart = (id: string) => {
+    setItems(prev => prev.filter(i => i.product_id !== id))
+  }
+
+  const clearCart = () => setItems([])
+
+  const total = items.reduce((acc, item) => acc + (item.price * item.quantity), 0)
+
+  return (
+    <CartContext.Provider value={{ 
+      items, addToCart, removeFromCart, clearCart, total,
+      deliveryFee, deliveryTime, distance, userLocation, setUserLocation, restaurant
+    }}>
+      {children}
+    </CartContext.Provider>
+  )
 }
 
+export const useCart = () => useContext(CartContext)

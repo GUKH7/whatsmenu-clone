@@ -1,10 +1,13 @@
 import type { Metadata } from "next";
+import { Inter } from "next/font/google";
 import "./globals.css";
-import { CartProvider } from "@/contexts/cart-context";
+import { CartProvider } from "@/contexts/cart-context"; 
+
+const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "WhatsMenu - Cardápio Digital",
-  description: "Cardápios digitais personalizados para restaurantes",
+  title: "WhatsMenu",
+  description: "Seu cardápio digital",
 };
 
 export default function RootLayout({
@@ -14,8 +17,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="pt-BR">
-      <body className="antialiased min-h-screen">
-        <CartProvider>{children}</CartProvider>
+      <body className={inter.className}>
+        <CartProvider>
+            {children}
+        </CartProvider>
       </body>
     </html>
   );
