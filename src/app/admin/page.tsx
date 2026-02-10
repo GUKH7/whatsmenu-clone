@@ -39,7 +39,7 @@ export default function AdminDashboard() {
   const checkUser = async () => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
-        router.push("/admin/login")
+        router.push("/login") // <--- CORREÇÃO: Apague o "/admin"
         return
     }
     fetchData()
