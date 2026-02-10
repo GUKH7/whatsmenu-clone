@@ -79,20 +79,17 @@ export default function ProductModal({ isOpen, onClose, onProductSaved, restaura
   useEffect(() => {
     if (isOpen) {
       if (productToEdit) {
-        // MODO EDIÇÃO: Preenche tudo
+        // MODO EDIÇÃO
         setName(productToEdit.name)
         setDescription(productToEdit.description || '')
         setPrice(productToEdit.price.toString())
         setCategoryId(productToEdit.category_id)
         setImageUrl(productToEdit.image_url)
         
-        // Verifica se tem addons e se estão no formato novo
         if (productToEdit.addons && Array.isArray(productToEdit.addons)) {
-            // Se o primeiro item tem 'title', é o formato novo de grupos
             if (productToEdit.addons.length > 0 && productToEdit.addons[0].title) {
                 setAddonGroups(productToEdit.addons)
             } 
-            // Se tem addons mas não tem título, é o formato antigo -> converte para um grupo "Geral"
             else if (productToEdit.addons.length > 0) {
                 setAddonGroups([{
                     id: crypto.randomUUID(),
@@ -109,7 +106,7 @@ export default function ProductModal({ isOpen, onClose, onProductSaved, restaura
         }
 
       } else {
-        // MODO CRIAÇÃO: Limpa tudo
+        // MODO CRIAÇÃO
         setName('')
         setDescription('')
         setPrice('')
@@ -195,7 +192,6 @@ export default function ProductModal({ isOpen, onClose, onProductSaved, restaura
     try {
         let finalUrl = imageUrl
 
-        // Upload da Imagem (se houve alteração)
         if (croppedImageBlob) {
             const fileName = `${Date.now()}-prod.jpg`
             const { error: upErr } = await supabase.storage.from('menu-images').upload(fileName, croppedImageBlob)
@@ -204,7 +200,6 @@ export default function ProductModal({ isOpen, onClose, onProductSaved, restaura
             finalUrl = data.publicUrl
         }
 
-        // Limpa grupos vazios antes de salvar
         const cleanGroups = addonGroups.filter(g => g.title.trim() !== "").map(g => ({
             ...g,
             options: g.options.filter(o => o.name.trim() !== "")
@@ -222,11 +217,9 @@ export default function ProductModal({ isOpen, onClose, onProductSaved, restaura
 
         let error;
         if (productToEdit) {
-            // UPDATE
             const { error: updateErr } = await supabase.from('products').update(payload).eq('id', productToEdit.id)
             error = updateErr
         } else {
-            // INSERT
             const { error: insertErr } = await supabase.from('products').insert(payload)
             error = insertErr
         }
@@ -268,119 +261,170 @@ export default function ProductModal({ isOpen, onClose, onProductSaved, restaura
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
       <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh]">
         
-        <div className="flex justify-between items-center p-4 border-b bg-gray-50 rounded-t-2xl">
-          <h2 className="font-bold text-lg text-gray-800">{productToEdit ? 'Editar Produto' : 'Novo Produto'}</h2>
-          <button onClick={onClose} className="p-2 hover:bg-gray-200 rounded-full text-gray-500"><X size={20} /></button>
+        {/* Header */}
+        <div className="flex justify-between items-center p-5 border-b border-gray-200 bg-gray-50 rounded-t-2xl">
+          <h2 className="font-bold text-xl text-gray-800">{productToEdit ? 'Editar Produto' : 'Novo Produto'}</h2>
+          <button onClick={onClose} className="p-2 hover:bg-gray-200 rounded-full text-gray-600 transition-colors"><X size={24} /></button>
         </div>
 
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-6">
           
-          {/* IMAGEM */}
-          <div className="flex gap-4 items-start">
-             <div className="w-32 h-24 bg-gray-100 rounded-lg border border-dashed border-gray-300 flex items-center justify-center relative overflow-hidden group cursor-pointer hover:border-red-400 transition-colors">
+          {/* IMAGEM E CAMPOS PRINCIPAIS */}
+          <div className="flex flex-col sm:flex-row gap-6 items-start">
+             {/* Área de Upload */}
+             <div className="w-full sm:w-32 h-32 flex-shrink-0 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300 flex items-center justify-center relative overflow-hidden group cursor-pointer hover:border-red-400 hover:bg-red-50 transition-colors">
                 <input type="file" accept="image/*" onChange={handleFileChange} className="absolute inset-0 opacity-0 z-10 cursor-pointer"/>
                 {croppedImageBlob ? (
                     <img src={URL.createObjectURL(croppedImageBlob)} className="w-full h-full object-cover" />
                 ) : imageUrl ? (
                     <img src={imageUrl} className="w-full h-full object-cover" />
                 ) : (
-                    <div className="text-center text-gray-400 text-xs"><Upload className="mx-auto mb-1" size={20}/>Foto</div>
+                    <div className="text-center text-gray-500 text-xs font-medium"><Upload className="mx-auto mb-1 text-gray-400" size={24}/>Adicionar<br/>Foto</div>
                 )}
-                <div className="absolute inset-0 bg-black/40 hidden group-hover:flex items-center justify-center text-white text-xs font-bold">Alterar</div>
+                <div className="absolute inset-0 bg-black/50 hidden group-hover:flex items-center justify-center text-white text-xs font-bold transition-opacity">Alterar</div>
              </div>
-             <div className="flex-1 space-y-3">
-                <input required value={name} onChange={e => setName(e.target.value)} className="w-full border p-2 rounded-lg font-bold outline-none focus:ring-2 focus:ring-red-100" placeholder="Nome do Produto (Ex: X-Bacon)" />
-                <textarea value={description} onChange={e => setDescription(e.target.value)} className="w-full border p-2 rounded-lg text-sm resize-none outline-none focus:ring-2 focus:ring-red-100" rows={2} placeholder="Descrição..." />
+
+             <div className="flex-1 w-full space-y-4">
+                <div>
+                    <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Nome do Produto</label>
+                    <input 
+                        required 
+                        value={name} 
+                        onChange={e => setName(e.target.value)} 
+                        className="w-full border border-gray-300 p-3 rounded-lg font-bold text-gray-900 placeholder:text-gray-400 outline-none focus:ring-2 focus:ring-red-100 focus:border-red-400 transition-all" 
+                        placeholder="Ex: X-Bacon Supremo" 
+                    />
+                </div>
+                <div>
+                    <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Descrição</label>
+                    <textarea 
+                        value={description} 
+                        onChange={e => setDescription(e.target.value)} 
+                        className="w-full border border-gray-300 p-3 rounded-lg text-sm text-gray-900 placeholder:text-gray-400 resize-none outline-none focus:ring-2 focus:ring-red-100 focus:border-red-400 transition-all" 
+                        rows={2} 
+                        placeholder="Ex: Pão brioche, burger 180g, bacon crocante e queijo cheddar..." 
+                    />
+                </div>
              </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
              <div>
-                <label className="text-xs font-bold text-gray-500 uppercase">Preço (R$)</label>
-                <input required type="number" step="0.01" value={price} onChange={e => setPrice(e.target.value)} className="w-full border p-2 rounded-lg outline-none focus:ring-2 focus:ring-red-100" placeholder="0.00" />
+                <label className="text-xs font-bold text-gray-700 uppercase mb-1 block">Preço (R$)</label>
+                <input 
+                    required 
+                    type="number" 
+                    step="0.01" 
+                    value={price} 
+                    onChange={e => setPrice(e.target.value)} 
+                    className="w-full border border-gray-300 p-3 rounded-lg font-bold text-gray-900 placeholder:text-gray-400 outline-none focus:ring-2 focus:ring-red-100 focus:border-red-400 transition-all" 
+                    placeholder="0.00" 
+                />
              </div>
              <div>
-                <label className="text-xs font-bold text-gray-500 uppercase">Categoria</label>
-                <select required value={categoryId} onChange={e => setCategoryId(e.target.value)} className="w-full border p-2 rounded-lg bg-white outline-none focus:ring-2 focus:ring-red-100">
-                    {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
+                <label className="text-xs font-bold text-gray-700 uppercase mb-1 block">Categoria</label>
+                <div className="relative">
+                    <select 
+                        required 
+                        value={categoryId} 
+                        onChange={e => setCategoryId(e.target.value)} 
+                        className="w-full border border-gray-300 p-3 rounded-lg bg-white font-medium text-gray-900 outline-none focus:ring-2 focus:ring-red-100 focus:border-red-400 appearance-none"
+                    >
+                        {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                    <div className="absolute right-3 top-3.5 pointer-events-none text-gray-500">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+                    </div>
+                </div>
              </div>
           </div>
 
-          <hr className="border-gray-100"/>
+          <hr className="border-gray-200"/>
 
           {/* ÁREA DE COMPLEMENTOS (GRUPOS) */}
-          <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
-              <div className="flex justify-between items-center mb-4">
-                  <h3 className="font-bold text-gray-800 text-sm uppercase">Complementos e Adicionais</h3>
-                  <button type="button" onClick={addGroup} className="text-xs bg-white border border-gray-300 hover:border-red-500 hover:text-red-600 font-bold px-3 py-1.5 rounded-full transition-all flex items-center gap-1 shadow-sm">
-                      <Plus size={14} /> Novo Grupo
+          <div className="bg-gray-50 p-5 rounded-xl border border-gray-200">
+              <div className="flex justify-between items-center mb-5">
+                  <h3 className="font-bold text-gray-800 text-sm uppercase flex items-center gap-2">
+                    <Scissors size={18} className="text-red-500"/> 
+                    Complementos
+                  </h3>
+                  <button type="button" onClick={addGroup} className="text-xs bg-white border border-gray-300 hover:border-red-500 hover:text-red-600 font-bold px-4 py-2 rounded-full transition-all flex items-center gap-2 shadow-sm">
+                      <Plus size={16} /> Novo Grupo
                   </button>
               </div>
 
               {addonGroups.length === 0 && (
-                  <div className="text-center py-6 border border-dashed border-gray-300 rounded-lg text-gray-400 text-xs">
-                      Nenhum grupo de complemento criado.<br/>(Ex: Ponto da Carne, Adicionais, Bebidas)
+                  <div className="text-center py-8 border-2 border-dashed border-gray-300 rounded-xl bg-white">
+                      <p className="text-gray-500 text-sm font-medium">Nenhum complemento adicionado.</p>
+                      <p className="text-gray-400 text-xs mt-1">Crie grupos como "Ponto da Carne", "Adicionais" ou "Bebidas".</p>
                   </div>
               )}
 
-              <div className="space-y-4">
+              <div className="space-y-5">
                   {addonGroups.map((group, gIndex) => (
-                      <div key={group.id || gIndex} className="border border-gray-200 rounded-lg overflow-hidden bg-white shadow-sm">
+                      <div key={group.id || gIndex} className="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm transition-all hover:shadow-md">
                           {/* Header do Grupo */}
-                          <div className="bg-gray-100 p-2 border-b border-gray-200 flex flex-wrap gap-2 items-center">
-                              <GripVertical size={16} className="text-gray-400" />
-                              <input 
-                                  placeholder="Título do Grupo (Ex: Escolha o Ponto)" 
-                                  value={group.title} 
-                                  onChange={e => updateGroup(gIndex, 'title', e.target.value)}
-                                  className="flex-1 bg-transparent border-none font-bold text-sm focus:ring-0 placeholder-gray-500 text-gray-800"
-                              />
-                              <div className="flex items-center gap-3 text-xs border-l border-gray-300 pl-3">
-                                  <label className="flex items-center gap-1 cursor-pointer hover:bg-gray-200 p-1 rounded">
-                                      <input type="checkbox" checked={group.required} onChange={e => updateGroup(gIndex, 'required', e.target.checked)} className="rounded text-red-600 focus:ring-red-500"/>
-                                      Obrigatório
+                          <div className="bg-gray-100/50 p-3 border-b border-gray-200 flex flex-wrap gap-3 items-center">
+                              <GripVertical size={20} className="text-gray-400 cursor-move" />
+                              <div className="flex-1 min-w-[200px]">
+                                <input 
+                                    placeholder="Nome do Grupo (Ex: Escolha o Molho)" 
+                                    value={group.title} 
+                                    onChange={e => updateGroup(gIndex, 'title', e.target.value)}
+                                    className="w-full bg-transparent border border-transparent hover:border-gray-300 focus:border-red-400 rounded px-2 py-1 font-bold text-gray-800 placeholder:text-gray-400 focus:ring-0 transition-all"
+                                />
+                              </div>
+                              
+                              <div className="flex items-center gap-4 text-xs border-l border-gray-300 pl-4">
+                                  <label className="flex items-center gap-2 cursor-pointer hover:bg-gray-200 px-2 py-1 rounded transition-colors">
+                                      <input 
+                                        type="checkbox" 
+                                        checked={group.required} 
+                                        onChange={e => updateGroup(gIndex, 'required', e.target.checked)} 
+                                        className="rounded text-red-600 focus:ring-red-500 w-4 h-4 border-gray-300"
+                                      />
+                                      <span className="font-bold text-gray-700">Obrigatório</span>
                                   </label>
-                                  <div className="flex items-center gap-1" title="Máximo de opções que o cliente pode selecionar">
-                                      <span>Max:</span>
+                                  <div className="flex items-center gap-2 bg-white px-2 py-1 rounded border border-gray-200" title="Máximo de opções">
+                                      <span className="font-bold text-gray-500">Max:</span>
                                       <input 
                                           type="number" 
                                           value={group.max_options || ''} 
                                           onChange={e => updateGroup(gIndex, 'max_options', parseInt(e.target.value))}
-                                          className="w-10 p-0.5 border rounded text-center text-xs"
+                                          className="w-12 p-0.5 border-none text-center font-bold text-gray-800 outline-none focus:ring-0"
                                           placeholder="∞"
                                       />
                                   </div>
-                                  <button type="button" onClick={() => removeGroup(gIndex)} className="text-gray-400 hover:text-red-600 p-1"><Trash2 size={14}/></button>
+                                  <button type="button" onClick={() => removeGroup(gIndex)} className="text-gray-400 hover:text-red-600 p-1.5 hover:bg-red-50 rounded transition-colors"><Trash2 size={16}/></button>
                               </div>
                           </div>
 
                           {/* Lista de Opções */}
-                          <div className="p-2 space-y-2">
+                          <div className="p-3 space-y-3 bg-white">
                               {group.options.map((option, oIndex) => (
-                                  <div key={oIndex} className="flex gap-2 items-center pl-2">
-                                      <div className="w-1.5 h-1.5 bg-gray-300 rounded-full"></div>
+                                  <div key={oIndex} className="flex gap-3 items-center pl-2 group/opt">
+                                      <div className="w-1.5 h-1.5 bg-gray-300 rounded-full group-hover/opt:bg-red-400 transition-colors"></div>
                                       <input 
-                                          placeholder="Nome da Opção (Ex: Bem Passado)" 
+                                          placeholder="Nome da Opção (Ex: Maionese Verde)" 
                                           value={option.name} 
                                           onChange={e => updateOption(gIndex, oIndex, 'name', e.target.value)}
-                                          className="flex-1 border border-gray-200 rounded px-2 py-1 text-sm focus:border-red-400 outline-none"
+                                          className="flex-1 border border-gray-200 rounded px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-red-400 focus:ring-1 focus:ring-red-100 outline-none transition-all"
                                       />
-                                      <div className="relative w-20">
-                                          <span className="absolute left-1 top-1.5 text-xs text-gray-400">R$</span>
+                                      <div className="relative w-24">
+                                          <span className="absolute left-2 top-2 text-xs text-gray-500 font-bold">R$</span>
                                           <input 
                                               type="number" 
                                               placeholder="0.00" 
                                               value={option.price} 
                                               onChange={e => updateOption(gIndex, oIndex, 'price', e.target.value)}
-                                              className="w-full border border-gray-200 rounded px-1 py-1 pl-5 text-sm focus:border-red-400 outline-none"
+                                              className="w-full border border-gray-200 rounded px-2 py-2 pl-6 text-sm font-bold text-gray-900 focus:border-red-400 focus:ring-1 focus:ring-red-100 outline-none transition-all"
                                           />
                                       </div>
-                                      <button type="button" onClick={() => removeOptionFromGroup(gIndex, oIndex)} className="text-gray-300 hover:text-red-500 p-1"><X size={16}/></button>
+                                      <button type="button" onClick={() => removeOptionFromGroup(gIndex, oIndex)} className="text-gray-300 hover:text-red-500 p-2 hover:bg-red-50 rounded transition-colors"><X size={16}/></button>
                                   </div>
                               ))}
-                              <button type="button" onClick={() => addOptionToGroup(gIndex)} className="text-xs text-blue-600 font-bold hover:underline mt-1 pl-4 flex items-center gap-1">
-                                  <Plus size={12}/> Adicionar Opção
+                              <button type="button" onClick={() => addOptionToGroup(gIndex)} className="text-xs text-blue-600 font-bold hover:text-blue-700 hover:bg-blue-50 px-3 py-2 rounded-lg mt-1 flex items-center gap-1 transition-colors">
+                                  <Plus size={14}/> Adicionar Opção
                               </button>
                           </div>
                       </div>
@@ -390,10 +434,11 @@ export default function ProductModal({ isOpen, onClose, onProductSaved, restaura
 
         </form>
 
-        <div className="p-4 border-t bg-gray-50 flex justify-end gap-3 rounded-b-2xl">
-            <button onClick={onClose} className="px-6 py-2 text-gray-600 font-bold hover:bg-gray-200 rounded-lg">Cancelar</button>
-            <button onClick={handleSubmit} disabled={isLoading} className="px-6 py-2 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 flex items-center gap-2 shadow-lg shadow-red-200">
-                {isLoading ? <Loader2 className="animate-spin" /> : 'Salvar Alterações'}
+        {/* Footer */}
+        <div className="p-5 border-t border-gray-200 bg-gray-50 flex justify-end gap-3 rounded-b-2xl">
+            <button onClick={onClose} className="px-6 py-2.5 text-gray-600 font-bold hover:bg-gray-200 hover:text-gray-800 rounded-lg transition-colors">Cancelar</button>
+            <button onClick={handleSubmit} disabled={isLoading} className="px-8 py-2.5 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 flex items-center gap-2 shadow-lg shadow-red-200 active:scale-95 transition-all disabled:opacity-70 disabled:cursor-not-allowed">
+                {isLoading ? <Loader2 className="animate-spin" size={20} /> : 'Salvar Produto'}
             </button>
         </div>
 
