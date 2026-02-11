@@ -1,4 +1,4 @@
-import AdminSidebar from "@/components/admin-sidebar"
+import AdminSidebar from "@/components/admin-sidebar" // <--- Importando o componente correto
 
 export default function AdminLayout({
   children,
@@ -7,7 +7,7 @@ export default function AdminLayout({
 }) {
   return (
     <div className="flex min-h-screen bg-[#F2F4F7]">
-      {/* Menu Lateral Fixo */}
+      {/* Menu Lateral Fixo (Importado de components/admin-sidebar.tsx) */}
       <AdminSidebar />
 
       {/* Área de Conteúdo (que muda conforme a página) */}

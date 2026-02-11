@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { createBrowserClient } from "@supabase/ssr"
 import { useRouter } from "next/navigation"
-import { Clock, ChefHat, Bike, CheckCircle, MapPin, DollarSign, Package, AlertCircle } from "lucide-react"
+import { Clock, ChefHat, Bike, CheckCircle, MapPin, DollarSign, Package, AlertCircle, Printer } from "lucide-react"
 
 // Tipos
 interface Order {
@@ -15,11 +15,11 @@ interface Order {
   payment_method: string
   created_at: string
   address: any
-  items?: any[]
+  items: any[]
+  delivery_fee: number
   change_for?: string
 }
 
-// Configuração das Abas (Status)
 const TABS = [
   { id: 'all', label: 'Todos' },
   { id: 'pending', label: 'Pendentes', countColor: 'bg-yellow-500' },
@@ -37,7 +37,11 @@ export default function OrdersPage() {
 
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState('pending') // Começa na aba Pendentes
+  const [errorMsg, setErrorMsg] = useState("")
+  const [activeTab, setActiveTab] = useState('pending')
+  
+  // CONFIG DO RESTAURANTE
+  const [restaurantConfig, setRestaurantConfig] = useState<any>(null)
 
   useEffect(() => {
     fetchOrders()
@@ -46,50 +50,157 @@ export default function OrdersPage() {
   }, [])
 
   const fetchOrders = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return router.push("/admin/login")
+    try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return router.push("/admin/login")
 
-    const { data: resto } = await supabase.from('restaurants').select('id').single()
-    if (!resto) return
+        const { data: resto } = await supabase.from('restaurants').select('*').single()
+        if (!resto) return
+        setRestaurantConfig(resto)
 
-    const { data } = await supabase
-        .from('orders')
-        .select('*, items:order_items(*)')
-        .eq('restaurant_id', resto.id)
-        .neq('status', 'canceled')
-        .order('created_at', { ascending: false })
+        const { data, error } = await supabase
+            .from('orders')
+            .select(`*, order_items (*)`)
+            .eq('restaurant_id', resto.id)
+            .neq('status', 'canceled')
+            .order('created_at', { ascending: false })
 
-    if (data) setOrders(data)
-    setLoading(false)
+        if (error) {
+            setErrorMsg(error.message)
+            return
+        }
+
+        if (data) {
+            const formattedOrders = data.map((order: any) => ({
+                ...order,
+                items: order.order_items || []
+            }))
+            setOrders(formattedOrders)
+        }
+    } catch (err) {
+        console.error(err)
+        setErrorMsg("Erro de conexão.")
+    } finally {
+        setLoading(false)
+    }
   }
 
   const subscribeToOrders = () => {
     const subscription = supabase
       .channel('orders-list-channel')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
-        fetchOrders() 
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => fetchOrders())
       .subscribe()
-
     return () => { supabase.removeChannel(subscription) }
   }
 
   const updateStatus = async (orderId: string, newStatus: string) => {
-    // Atualização Otimista
     setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus as any } : o))
     await supabase.from('orders').update({ status: newStatus }).eq('id', orderId)
   }
 
-  // Filtra os pedidos com base na aba ativa
+  // --- LÓGICA DE IMPRESSÃO (V2 - High Contrast) 🖨️ ---
+  const handlePrint = (order: Order) => {
+      const printWindow = window.open('', '', 'width=350,height=600');
+      if (!printWindow) return;
+
+      const width = restaurantConfig?.printer_width || 80;
+      const fontSize = restaurantConfig?.printer_font_size || 12;
+      const titleSize = fontSize + 4;
+
+      const itemsHtml = order.items.map(item => `
+        <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+            <span>${item.quantity}x ${item.product_name}</span>
+            <span>R$ ${item.price.toFixed(2)}</span>
+        </div>
+        ${item.addons && Array.isArray(item.addons) && item.addons.length > 0 ? 
+            `<div style="font-size: ${fontSize - 1}px; font-weight: normal; margin-left: 10px;">+ ${item.addons.map((a:any) => a.name).join(', ')}</div>` : ''}
+        ${item.observation ? `<div style="font-size: ${fontSize}px; font-weight: 900; margin-left: 10px; text-decoration: underline;">OBS: ${item.observation}</div>` : ''}
+      `).join('');
+
+      const addressHtml = order.address && typeof order.address === 'object' ? `
+        <div style="border-bottom: 2px dashed #000; padding: 5px 0;">
+            <div style="font-weight: 900; font-size: ${fontSize + 1}px;">ENTREGA:</div>
+            <div style="font-weight: 700;">${order.address.street}, ${order.address.number}</div>
+            <div>${order.address.neighborhood}</div>
+            ${order.address.complement ? `<div>Comp: ${order.address.complement}</div>` : ''}
+            ${order.address.distance ? `<div style="margin-top: 4px; font-size: ${fontSize-1}px;">Distância: ${order.address.distance}km</div>` : ''}
+        </div>
+      ` : '<div style="border-bottom: 2px dashed #000; padding: 5px 0;">Retirada no Balcão</div>';
+
+      const htmlContent = `
+        <html>
+        <head>
+            <title>Pedido #${order.id.slice(0,4)}</title>
+            <style>
+                @media print {
+                    @page { margin: 0; }
+                    body { margin: 0; padding: 5px; }
+                }
+                body { 
+                    font-family: 'Courier New', monospace; 
+                    /* Truque para preto absoluto e nitidez */
+                    color: #000000 !important;
+                    -webkit-print-color-adjust: exact; 
+                    print-color-adjust: exact;
+                    font-weight: 600; /* Peso base mais forte */
+                    font-size: ${fontSize}px; 
+                    width: ${width}mm;
+                }
+                .center { text-align: center; }
+                .bold { font-weight: 800; } /* Negrito extra */
+                .line { border-bottom: 2px dashed #000; margin: 8px 0; } /* Linha mais grossa */
+                .flex { display: flex; justify-content: space-between; }
+                .big { font-size: ${titleSize}px; text-transform: uppercase; }
+                .obs { font-weight: 900; }
+            </style>
+        </head>
+        <body>
+            <div class="center bold big" style="margin-bottom: 5px;">${restaurantConfig?.name || "Delivery"}</div>
+            <div class="center bold">Pedido #${order.id.slice(0, 4)}</div>
+            <div class="center" style="font-size: ${fontSize - 2}px; font-weight: normal;">${new Date(order.created_at).toLocaleString('pt-BR')}</div>
+            
+            <div class="line"></div>
+            
+            <div><span class="bold">Cliente:</span> ${order.customer_name}</div>
+            <div><span class="bold">Tel:</span> ${order.customer_phone}</div>
+            
+            ${addressHtml}
+            
+            <div style="margin-top: 5px; margin-bottom: 5px;">
+                ${itemsHtml}
+            </div>
+            
+            <div class="line"></div>
+            
+            <div class="flex"><span>Subtotal:</span> <span>R$ ${(order.total - (order.delivery_fee || 0)).toFixed(2)}</span></div>
+            <div class="flex"><span>Entrega:</span> <span>R$ ${(order.delivery_fee || 0).toFixed(2)}</span></div>
+            <div class="flex bold big" style="margin-top: 5px;"><span>TOTAL:</span> <span>R$ ${order.total.toFixed(2)}</span></div>
+            
+            <div class="line"></div>
+            <div class="center bold">Pagamento: ${order.payment_method === 'card' ? 'Cartão' : order.payment_method === 'money' || order.payment_method === 'cash' ? 'Dinheiro' : 'PIX'}</div>
+            ${order.change_for ? `<div class="center bold">Troco para: ${order.change_for}</div>` : ''}
+            <br/>
+            <div class="center" style="font-size: 10px;">--- Fim do Pedido ---</div>
+        </body>
+        </html>
+      `;
+
+      printWindow.document.write(htmlContent);
+      printWindow.document.close();
+      printWindow.focus();
+      setTimeout(() => {
+          printWindow.print();
+          printWindow.close();
+      }, 500);
+  }
+
   const filteredOrders = orders.filter(o => activeTab === 'all' ? true : o.status === activeTab)
-
-  // Contadores para as bolinhas das abas
   const getCount = (status: string) => orders.filter(o => o.status === status).length
-
   const formatPrice = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val)
   const formatTime = (dateStr: string) => new Date(dateStr).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
 
   if (loading) return <div className="p-8 text-center text-gray-500 font-medium animate-pulse">Carregando pedidos...</div>
+  if (errorMsg) return <div className="p-8 text-center text-red-600">{errorMsg}</div>
 
   return (
     <div className="max-w-5xl mx-auto pb-20">
@@ -106,7 +217,7 @@ export default function OrdersPage() {
           </div>
       </div>
 
-      {/* Abas de Navegação */}
+      {/* Abas */}
       <div className="flex overflow-x-auto gap-2 border-b border-gray-200 mb-6 pb-1">
           {TABS.map(tab => (
               <button
@@ -131,7 +242,7 @@ export default function OrdersPage() {
           ))}
       </div>
 
-      {/* Lista de Pedidos */}
+      {/* Lista */}
       <div className="space-y-4">
           {filteredOrders.length === 0 ? (
               <div className="text-center py-20 bg-white rounded-xl border border-gray-200 border-dashed">
@@ -142,30 +253,40 @@ export default function OrdersPage() {
               filteredOrders.map(order => (
                   <div key={order.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow group">
                       
-                      {/* HEADER DO CARD */}
+                      {/* HEADER CARD */}
                       <div className="bg-gray-50 px-6 py-3 border-b border-gray-100 flex justify-between items-center">
                           <div className="flex items-center gap-3">
                               <span className="font-bold text-gray-800 text-lg">#{order.id.slice(0, 4)}</span>
                               <span className="text-gray-400">|</span>
                               <span className="font-bold text-gray-700">{order.customer_name}</span>
                           </div>
-                          <div className="flex items-center gap-2 text-sm text-gray-500 font-medium bg-white px-3 py-1 rounded-full border border-gray-200">
-                              <Clock size={14} /> {formatTime(order.created_at)}
+                          <div className="flex items-center gap-3">
+                              {/* BOTÃO IMPRIMIR */}
+                              <button 
+                                onClick={() => handlePrint(order)}
+                                className="flex items-center gap-1 text-gray-600 hover:text-black bg-white border border-gray-300 hover:border-black px-3 py-1 rounded-md text-xs font-bold shadow-sm transition-all"
+                              >
+                                  <Printer size={14}/> Imprimir
+                              </button>
+                              
+                              <div className="flex items-center gap-2 text-sm text-gray-500 font-medium bg-white px-3 py-1 rounded-full border border-gray-200">
+                                  <Clock size={14} /> {formatTime(order.created_at)}
+                              </div>
                           </div>
                       </div>
 
                       <div className="p-6 flex flex-col md:flex-row gap-6">
                           
-                          {/* ESQUERDA: ITENS */}
+                          {/* ITENS */}
                           <div className="flex-1 space-y-3">
-                              {order.items?.map((item: any, i) => (
+                              {order.items?.map((item: any, i: number) => (
                                   <div key={i} className="flex items-start gap-3 text-sm">
                                       <span className="font-bold text-gray-500 border border-gray-200 px-2 rounded bg-gray-50">{item.quantity}x</span>
                                       <div>
                                           <p className="text-gray-800 font-medium">{item.product_name}</p>
                                           {item.addons && Array.isArray(item.addons) && item.addons.length > 0 && (
                                               <p className="text-xs text-gray-500 mt-1">
-                                                  + {item.addons.map((g: any) => g.options.map((o: any) => o.name).join(', ')).join(', ')}
+                                                  + {item.addons.map((opt: any) => opt.name).join(', ')}
                                               </p>
                                           )}
                                           {item.observation && (
@@ -178,19 +299,19 @@ export default function OrdersPage() {
                               ))}
                           </div>
 
-                          {/* MEIO: ENDEREÇO E PAGAMENTO */}
+                          {/* INFO ENTREGA */}
                           <div className="md:w-1/3 border-t md:border-t-0 md:border-l border-gray-100 pt-4 md:pt-0 md:pl-6 space-y-4">
                               <div className="flex gap-3">
                                   <div className="bg-gray-100 p-2 rounded-full h-fit"><MapPin size={16} className="text-gray-500"/></div>
                                   <div>
                                       <p className="text-xs font-bold text-gray-400 uppercase">Entrega</p>
-                                      {order.address ? (
+                                      {order.address && typeof order.address === 'object' ? (
                                           <p className="text-sm text-gray-700 leading-tight">
-                                              {order.address.street}, {order.address.number}<br/>
-                                              {order.address.neighborhood}
+                                              {order.address.street || 'Rua não inf.'}, {order.address.number || 'S/N'}<br/>
+                                              {order.address.neighborhood || ''}
                                           </p>
                                       ) : (
-                                          <p className="text-sm text-gray-500">Retirada no Balcão</p>
+                                          <p className="text-sm text-gray-500">Retirada / Sem endereço</p>
                                       )}
                                   </div>
                               </div>
@@ -205,7 +326,7 @@ export default function OrdersPage() {
                               </div>
                           </div>
 
-                          {/* DIREITA: AÇÕES */}
+                          {/* AÇÕES */}
                           <div className="md:w-48 flex flex-col justify-center gap-2 border-t md:border-t-0 md:border-l border-gray-100 pt-4 md:pt-0 md:pl-6">
                               {order.status === 'pending' && (
                                   <>
