@@ -1,11 +1,12 @@
 "use client"
 
-import { useState } from 'react'
+import { useState, Suspense } from 'react' // <--- Importei Suspense
 import { createBrowserClient } from '@supabase/ssr'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Loader2, Mail, Lock, ArrowLeft } from 'lucide-react'
 
-export default function AuthPage() {
+// 1. Criamos um componente isolado para o conteúdo que usa "useSearchParams"
+function AuthContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const returnUrl = searchParams.get('returnUrl') || '/' 
@@ -44,8 +45,7 @@ export default function AuthPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4 font-sans">
-      <div className="bg-white w-full max-w-md p-8 rounded-2xl shadow-sm border border-gray-100">
+    <div className="bg-white w-full max-w-md p-8 rounded-2xl shadow-sm border border-gray-100">
         <button onClick={() => router.back()} className="flex items-center gap-2 text-gray-400 hover:text-gray-600 mb-6 text-sm"><ArrowLeft size={16}/> Voltar</button>
         <h1 className="text-2xl font-bold text-gray-800 mb-1">{isLogin ? 'Acessar Conta' : 'Criar Conta'}</h1>
         <form onSubmit={handleAuth} className="space-y-4 mt-6">
@@ -54,7 +54,18 @@ export default function AuthPage() {
           <button disabled={loading} className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3.5 rounded-xl flex items-center justify-center gap-2">{loading ? <Loader2 className="animate-spin"/> : isLogin ? 'Entrar' : 'Cadastrar'}</button>
         </form>
         <div className="mt-6 text-center"><button onClick={() => setIsLogin(!isLogin)} className="text-red-600 font-bold hover:underline">{isLogin ? 'Criar nova conta' : 'Já tenho conta'}</button></div>
-      </div>
+    </div>
+  )
+}
+
+// 2. O componente principal agora só envolve o conteúdo com Suspense
+// Isso resolve o erro do Vercel!
+export default function AuthPage() {
+  return (
+    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4 font-sans">
+      <Suspense fallback={<div className="flex justify-center"><Loader2 className="animate-spin text-red-600"/></div>}>
+        <AuthContent />
+      </Suspense>
     </div>
   )
 }
