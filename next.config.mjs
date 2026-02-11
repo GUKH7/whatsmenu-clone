@@ -1,22 +1,21 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Ignora erros de TypeScript
   typescript: {
+    // !! ATENÇÃO !!
+    // Perigoso em projetos grandes, mas útil para deploy rápido agora.
     ignoreBuildErrors: true,
   },
-  // Ignora erros de ESLint
   eslint: {
     ignoreDuringBuilds: true,
   },
-  // Permite imagens externas (Supabase)
   images: {
     remotePatterns: [
       {
         protocol: 'https',
-        hostname: '**',
+        hostname: '*', // Corrigido de '**' para '*'
       },
     ],
   },
 };
 
-module.exports = nextConfig;
+export default nextConfig;
