@@ -2,6 +2,7 @@
 
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
+import { createBrowserClient } from "@supabase/ssr"
 import { 
   LayoutDashboard, 
   UtensilsCrossed, 
@@ -11,16 +12,17 @@ import {
   Store,
   Ticket,
   Users,
-  Star // <--- Novo Ícone
+  Star,
+  History 
 } from "lucide-react"
-import { createBrowserClient } from "@supabase/ssr"
 
 const MENU_ITEMS = [
   { name: "Visão Geral", href: "/admin", icon: LayoutDashboard },
+  { name: "Pedidos", href: "/admin/orders", icon: ShoppingBag }, // Seu gestor atual
+  { name: "Histórico", href: "/admin/history", icon: History },  // A tabela nova
   { name: "Cardápio", href: "/admin/menu", icon: UtensilsCrossed },
-  { name: "Pedidos", href: "/admin/orders", icon: ShoppingBag },
   { name: "Clientes", href: "/admin/clients", icon: Users },
-  { name: "Avaliações", href: "/admin/reviews", icon: Star }, // <--- NOVO ITEM
+  { name: "Avaliações", href: "/admin/reviews", icon: Star },
   { name: "Cupons", href: "/admin/coupons", icon: Ticket },
   { name: "Configurações", href: "/admin/settings", icon: Settings },
 ]

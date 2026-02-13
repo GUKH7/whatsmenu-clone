@@ -4,7 +4,7 @@ import { useEffect, useState } from "react"
 import { createBrowserClient } from "@supabase/ssr"
 import { useRouter } from "next/navigation"
 import { User, MapPin, ShoppingBag, LogOut, Loader2, Star, Home } from "lucide-react"
-import ReviewModal from "@/components/review-modal" // <--- Import Novo
+import ReviewModal from "@/components/review-modal"
 
 export default function MyAccountPage() {
   const router = useRouter()
@@ -20,7 +20,6 @@ export default function MyAccountPage() {
   const [orders, setOrders] = useState<any[]>([])
   const [addresses, setAddresses] = useState<any[]>([])
   
-  // Estado do Modal de Avaliação
   const [reviewModalOpen, setReviewModalOpen] = useState(false)
   const [selectedOrder, setSelectedOrder] = useState<any>(null)
 
@@ -28,14 +27,17 @@ export default function MyAccountPage() {
 
   const checkSession = async () => {
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return router.push('/auth?returnUrl=/minha-conta')
+    if (!user) {
+        // Agora pegamos o nome do restaurante atual para passar pro Login!
+        const currentSlug = window.location.pathname.split('/')[1]
+        return router.push(`/auth?returnUrl=/${currentSlug}/minha-conta`)
+    }
     setUser(user)
     fetchUserData(user.id)
   }
 
   const fetchUserData = async (userId: string) => {
     try {
-        // Busca Pedidos + Reviews para saber se já avaliou
         const { data: myOrders } = await supabase
             .from('orders')
             .select(`
@@ -59,7 +61,22 @@ export default function MyAccountPage() {
       setReviewModalOpen(true)
   }
 
-  const handleLogout = async () => { await supabase.auth.signOut(); router.push('/') }
+  // 👇 A MÁGICA FOI FEITA AQUI 👇
+  const handleLogout = async () => { 
+    try {
+      // 1. Desloga do Supabase
+      await supabase.auth.signOut(); 
+      
+      // 2. Pega o nome do restaurante atual na URL
+      const currentSlug = window.location.pathname.split('/')[1];
+      
+      // 3. Força o redirecionamento e recarrega a página (limpa o cache na hora)
+      window.location.href = `/${currentSlug}`;
+    } catch (error) {
+      console.error("Erro ao sair:", error);
+    }
+  }
+
   const formatPrice = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val)
   const formatDate = (date: string) => new Date(date).toLocaleDateString('pt-BR')
 
@@ -117,7 +134,6 @@ export default function MyAccountPage() {
                                     <p className="text-sm text-gray-500">Total: <span className="font-bold text-gray-900 text-base">{formatPrice(order.total)}</span></p>
                                     
                                     {/* BOTÃO AVALIAR */}
-                                    {/* Só aparece se estiver concluído (done) ou pendente e NÃO tiver review */}
                                     {!hasReview && (
                                         <button 
                                             onClick={() => handleOpenReview(order)}

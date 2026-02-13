@@ -93,12 +93,57 @@ export default function OrdersPage() {
     return () => { supabase.removeChannel(subscription) }
   }
 
-  const updateStatus = async (orderId: string, newStatus: string) => {
-    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus as any } : o))
-    await supabase.from('orders').update({ status: newStatus }).eq('id', orderId)
+  // --- FUNÇÃO PARA LIMPAR O TELEFONE ---
+  const formatPhoneForWhatsapp = (phone: string) => {
+      let cleaned = phone.replace(/\D/g, ''); // Tira traços e espaços
+      if (!cleaned.startsWith('55')) {
+          cleaned = '55' + cleaned; // Garante o 55 do Brasil
+      }
+      return cleaned;
   }
 
-  // --- LÓGICA DE IMPRESSÃO (V2 - High Contrast) 🖨️ ---
+  // --- NOVA FUNÇÃO DE STATUS COM DISPARO NO WHATSAPP ---
+  const updateStatus = async (order: Order, newStatus: string) => {
+    // 1. Atualiza a tela na hora
+    setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: newStatus as any } : o))
+    
+    // 2. Atualiza no Supabase
+    await supabase.from('orders').update({ status: newStatus }).eq('id', order.id)
+
+    // 3. Monta a mensagem e envia para o nosso Robô! 🤖📱
+    if (order.customer_phone) {
+        let mensagem = "";
+        const storeName = restaurantConfig?.name || "Delivery";
+        const orderNum = order.id.slice(0, 4);
+
+        if (newStatus === 'preparing') {
+            mensagem = `👨‍🍳 *Olá, ${order.customer_name}!*\nO seu pedido *#${orderNum}* acabou de entrar na cozinha do *${storeName}* e já está sendo preparado!\n\nAvisaremos quando sair para entrega.`;
+        } else if (newStatus === 'delivering') {
+            mensagem = `🛵 *Oba, ${order.customer_name}!*\nO seu pedido *#${orderNum}* do *${storeName}* acabou de sair para entrega!\n\nFique de olho no portão! 👀`;
+        } else if (newStatus === 'done') {
+            mensagem = `✅ *Pedido Concluído!*\nEsperamos que você goste da sua refeição, ${order.customer_name}!\nObrigado por pedir no *${storeName}*!`;
+        } else if (newStatus === 'canceled') {
+            mensagem = `❌ *Pedido Cancelado*\n${order.customer_name}, infelizmente o seu pedido *#${orderNum}* precisou ser cancelado.`;
+        }
+
+        if (mensagem) {
+            try {
+                await fetch('http://localhost:3001/enviar', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        telefone: formatPhoneForWhatsapp(order.customer_phone),
+                        mensagem: mensagem
+                    })
+                });
+                console.log("Ordem enviada ao Robô!");
+            } catch (error) {
+                console.error("Erro ao contatar API do WhatsApp:", error);
+            }
+        }
+    }
+  }
+
   const handlePrint = (order: Order) => {
       const printWindow = window.open('', '', 'width=350,height=600');
       if (!printWindow) return;
@@ -138,20 +183,18 @@ export default function OrdersPage() {
                 }
                 body { 
                     font-family: 'Courier New', monospace; 
-                    /* Truque para preto absoluto e nitidez */
                     color: #000000 !important;
                     -webkit-print-color-adjust: exact; 
                     print-color-adjust: exact;
-                    font-weight: 600; /* Peso base mais forte */
+                    font-weight: 600; 
                     font-size: ${fontSize}px; 
                     width: ${width}mm;
                 }
                 .center { text-align: center; }
-                .bold { font-weight: 800; } /* Negrito extra */
-                .line { border-bottom: 2px dashed #000; margin: 8px 0; } /* Linha mais grossa */
+                .bold { font-weight: 800; } 
+                .line { border-bottom: 2px dashed #000; margin: 8px 0; } 
                 .flex { display: flex; justify-content: space-between; }
                 .big { font-size: ${titleSize}px; text-transform: uppercase; }
-                .obs { font-weight: 900; }
             </style>
         </head>
         <body>
@@ -326,18 +369,18 @@ export default function OrdersPage() {
                               </div>
                           </div>
 
-                          {/* AÇÕES */}
+                          {/* AÇÕES (ATUALIZADAS PARA PASSAR O ORDER INTEIRO) */}
                           <div className="md:w-48 flex flex-col justify-center gap-2 border-t md:border-t-0 md:border-l border-gray-100 pt-4 md:pt-0 md:pl-6">
                               {order.status === 'pending' && (
                                   <>
                                       <button 
-                                          onClick={() => updateStatus(order.id, 'preparing')}
+                                          onClick={() => updateStatus(order, 'preparing')}
                                           className="w-full py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg shadow-sm transition-all active:scale-95 flex items-center justify-center gap-2"
                                       >
                                           ACEITAR
                                       </button>
                                       <button 
-                                          onClick={() => { if(confirm('Rejeitar pedido?')) updateStatus(order.id, 'canceled') }}
+                                          onClick={() => { if(confirm('Rejeitar pedido?')) updateStatus(order, 'canceled') }}
                                           className="w-full py-2 text-gray-500 hover:bg-gray-100 font-bold rounded-lg text-sm transition-colors"
                                       >
                                           Rejeitar
@@ -347,7 +390,7 @@ export default function OrdersPage() {
 
                               {order.status === 'preparing' && (
                                   <button 
-                                      onClick={() => updateStatus(order.id, 'delivering')}
+                                      onClick={() => updateStatus(order, 'delivering')}
                                       className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg shadow-sm transition-all flex items-center justify-center gap-2"
                                   >
                                       <Bike size={18} /> DESPACHAR
@@ -356,7 +399,7 @@ export default function OrdersPage() {
 
                               {order.status === 'delivering' && (
                                   <button 
-                                      onClick={() => updateStatus(order.id, 'done')}
+                                      onClick={() => updateStatus(order, 'done')}
                                       className="w-full py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg shadow-sm transition-all flex items-center justify-center gap-2"
                                   >
                                       <CheckCircle size={18} /> CONCLUIR
